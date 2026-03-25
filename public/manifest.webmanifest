@@ -1,0 +1,18 @@
+{
+  "name": "Memorizer",
+  "short_name": "Memorizer",
+  "description": "Offline-friendly flashcards for studying English and Japanese.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f3efe4",
+  "theme_color": "#f3efe4",
+  "icons": [
+    {
+      "src": "./pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
