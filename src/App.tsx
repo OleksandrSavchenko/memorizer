@@ -42,12 +42,40 @@ function isJapanesePromptDirection(direction: Direction) {
   return direction === "jp-to-en-full" || direction === "jp-kana-to-en";
 }
 
+function getEnglishAnswerVariants(value: string) {
+  const normalized = value.trim().replace(/（/g, "(").replace(/）/g, ")");
+  const variants = new Set<string>();
+
+  const addParts = (text: string) => {
+    text
+      .split(/[\/,]/)
+      .map((part) => normalizeText(part))
+      .filter(Boolean)
+      .forEach((part) => variants.add(part));
+  };
+
+  variants.add(normalizeText(normalized));
+
+  const withoutParentheses = normalized.replace(/\s*\(([^()]+)\)\s*/g, " ").trim();
+  if (withoutParentheses) {
+    variants.add(normalizeText(withoutParentheses));
+    addParts(withoutParentheses);
+  }
+
+  const parentheticalMatches = normalized.matchAll(/\(([^()]+)\)/g);
+  for (const match of parentheticalMatches) {
+    addParts(match[1]);
+  }
+
+  return variants;
+}
+
 function isAnswerCorrect(answer: string, expectedAnswer: string, direction: Direction) {
   const normalizedAnswer = normalizeText(answer);
   const normalizedExpected = normalizeText(expectedAnswer);
 
   if (direction === "jp-to-en-full" || direction === "jp-kana-to-en") {
-    return normalizedAnswer === normalizedExpected;
+    return getEnglishAnswerVariants(expectedAnswer).has(normalizedAnswer);
   }
 
   const kanaOnly = extractKana(expectedAnswer);
