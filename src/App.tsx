@@ -95,7 +95,8 @@ export default function App() {
   const [rawSet, setRawSet] = useState(SAMPLE_SET);
   const [direction, setDirection] = useState<Direction>("en-to-jp");
   const [started, setStarted] = useState(false);
-  const [guessedIds, setGuessedIds] = useState<string[]>([]);
+  const [currentRoundIds, setCurrentRoundIds] = useState<string[]>([]);
+  const [nextRoundIds, setNextRoundIds] = useState<string[]>([]);
   const [currentCardId, setCurrentCardId] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
@@ -106,13 +107,23 @@ export default function App() {
 
   const cards = useMemo(() => parseCards(rawSet), [rawSet]);
 
-  const remainingCards = useMemo(() => {
-    return cards.filter((card) => !guessedIds.includes(card.id));
-  }, [cards, guessedIds]);
+  const cardMap = useMemo(() => {
+    return new Map(cards.map((card) => [card.id, card]));
+  }, [cards]);
 
   const currentCard = useMemo(() => {
-    return remainingCards.find((card) => card.id === currentCardId) || null;
-  }, [remainingCards, currentCardId]);
+    return currentCardId ? cardMap.get(currentCardId) || null : null;
+  }, [cardMap, currentCardId]);
+
+  const unresolvedCardIds = useMemo(() => {
+    return Array.from(new Set([...currentRoundIds, ...nextRoundIds]));
+  }, [currentRoundIds, nextRoundIds]);
+
+  const remainingCards = useMemo(() => {
+    return unresolvedCardIds
+      .map((cardId) => cardMap.get(cardId))
+      .filter((card): card is CardItem => !!card);
+  }, [cardMap, unresolvedCardIds]);
 
   const promptText = currentCard
     ? direction === "en-to-jp"
@@ -175,9 +186,42 @@ export default function App() {
     setFeedback(null);
   };
 
+  const startNextRound = (upcomingRoundIds: string[]) => {
+    setCurrentRoundIds([...upcomingRoundIds]);
+    setNextRoundIds([]);
+    selectNextCard(
+      upcomingRoundIds.map((cardId) => cardMap.get(cardId)).filter((card): card is CardItem => !!card)
+    );
+  };
+
+  const advanceRound = (upcomingCurrentRoundIds: string[], upcomingNextRoundIds: string[]) => {
+    if (upcomingCurrentRoundIds.length > 0) {
+      setCurrentRoundIds(upcomingCurrentRoundIds);
+      setNextRoundIds(upcomingNextRoundIds);
+      selectNextCard(
+        upcomingCurrentRoundIds.map((cardId) => cardMap.get(cardId)).filter((card): card is CardItem => !!card)
+      );
+      return;
+    }
+
+    if (upcomingNextRoundIds.length > 0) {
+      window.setTimeout(() => {
+        startNextRound(upcomingNextRoundIds);
+      }, 250);
+      return;
+    }
+
+    setCurrentRoundIds([]);
+    setNextRoundIds([]);
+    setCurrentCardId(null);
+    setAnswer("");
+    setFeedback(null);
+  };
+
   const resetSessionState = () => {
     setStarted(false);
-    setGuessedIds([]);
+    setCurrentRoundIds([]);
+    setNextRoundIds([]);
     setCurrentCardId(null);
     setAnswer("");
     setFeedback(null);
@@ -189,12 +233,13 @@ export default function App() {
 
   const handleStart = () => {
     const parsed = parseCards(rawSet);
+    const parsedIds = parsed.map((card) => card.id);
     setStarted(true);
-    setGuessedIds([]);
+    setCurrentRoundIds(parsedIds);
+    setNextRoundIds([]);
     setFeedback(null);
     setAnswer("");
-    const first = getRandomCard(parsed);
-    setCurrentCardId(first?.id || null);
+    selectNextCard(parsed);
   };
 
   const handleCheck = () => {
@@ -203,20 +248,21 @@ export default function App() {
     const correct = isAnswerCorrect(answer, expectedAnswer, direction);
     setFeedback(correct ? "correct" : "wrong");
 
-    if (!correct) return;
+    if (!correct) {
+      setNextRoundIds((prev) => (prev.includes(currentCard.id) ? prev : [...prev, currentCard.id]));
+      return;
+    }
 
-    const nextGuessed = [...guessedIds, currentCard.id];
-    setGuessedIds(nextGuessed);
-
-    const nextRemaining = cards.filter((card) => !nextGuessed.includes(card.id));
+    const upcomingCurrentRoundIds = currentRoundIds.filter((cardId) => cardId !== currentCard.id);
 
     window.setTimeout(() => {
-      selectNextCard(nextRemaining);
+      advanceRound(upcomingCurrentRoundIds, nextRoundIds);
     }, 350);
   };
 
   const handleResetProgress = () => {
-    setGuessedIds([]);
+    setCurrentRoundIds([]);
+    setNextRoundIds([]);
     setFeedback(null);
     setAnswer("");
 
@@ -231,12 +277,21 @@ export default function App() {
     }
 
     setStarted(true);
+    setCurrentRoundIds(cards.map((card) => card.id));
     selectNextCard(cards);
   };
 
   const handleShuffleCurrent = () => {
-    const pool = remainingCards.filter((card) => card.id !== currentCardId);
-    selectNextCard(pool.length ? pool : remainingCards);
+    if (!currentCard) {
+      return;
+    }
+
+    const upcomingCurrentRoundIds = currentRoundIds.filter((cardId) => cardId !== currentCard.id);
+    const upcomingNextRoundIds = nextRoundIds.includes(currentCard.id)
+      ? nextRoundIds
+      : [...nextRoundIds, currentCard.id];
+
+    advanceRound(upcomingCurrentRoundIds, upcomingNextRoundIds);
   };
 
   const handleDirectionChange = (nextDirection: Direction) => {
